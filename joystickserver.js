@@ -93,7 +93,7 @@ class Joystick extends events {
     }
 };
 
-
+//setup wsserver
 const webSocketsServerPort = 5000;
 
 const clients = [];
@@ -169,7 +169,7 @@ function sendButton(data){
     }
 }
 
-var joystick = new Joystick(0, 100); //joystic on /dev/input/js0, active when 100 away from center
+var joystick = new Joystick(0, 100,0); //joystic on /dev/input/js0, active when 100 away from center, notify all movements
 joystick.on('button', sendButton);
 joystick.on('axis', setAxis);
 
