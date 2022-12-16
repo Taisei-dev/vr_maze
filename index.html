@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>aframe</title>
+
+    <script src="https://aframe.io/releases/1.0.4/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.1.1/dist/aframe-extras.min.js"></script>
+    <script>
+        //var isCavasNeedUpdate = false;
+        //var backImageData = null;
+        const WS_URL='wss://192.168.11.11:5000';
+
+        //make movement on joycon message
+        AFRAME.registerComponent('joycon-control', {
+            schema: { default: '' },
+            init: function () {
+                const ws = new WebSocket(WS_URL);
+                this.direction = new THREE.Vector3(0, 0, 0);
+                ws.onmessage = (event) => {
+                    let scene = document.querySelector('a-scene');
+                    let ctx = document.getElementById('canvas').getContext('2d');
+                    let msg = `${event.data}`.split(' ').map(val => Number(val));
+                    if (msg[3] == 1) {
+                        //reset
+                        location.reload();
+                    }
+                    [x, z, rotate] = [msg[0] / 32767 / 5, msg[1] / 32767 / 5, msg[2] / 32767 / 5];
+
+                    if (scene.renderer.xr.isPresenting) {
+                        //set position
+                        const cameraVector = new THREE.Vector3();
+                        let xrCamera = scene.renderer.xr.getCamera(scene.camera);
+                        xrCamera.getWorldDirection(cameraVector);
+                        let vec = new THREE.Vector3(-z, 0, x);
+                        let cameravec = new THREE.Vector3(cameraVector.z, 0, cameraVector.x);
+                        this.direction = new THREE.Vector3(vec.x * cameravec.z - vec.z * cameravec.x, 0, vec.x * cameravec.x + vec.z * cameravec.z);
+                    }
+                    else {
+                        let rotation = this.el.object3D.rotation;
+                        let vec = new THREE.Vector3(-z, 0, x);
+                        this.direction = new THREE.Vector3(vec.x * Math.sin(rotation._y) + vec.z * Math.cos(rotation._y), 0, vec.x * Math.cos(rotation._y) - vec.z * Math.sin(rotation._y));
+                    }
+
+                    //if (!backImageData) return;
+                    //ctx.putImageData(backImageData, 0, 0);
+                    //ctx.fillStyle = msg[3] == 1 ? 'blue' : 'red';
+                    //ctx.beginPath();
+                    //ctx.arc(256 + msg[0] * 256 / 32767, 256 + msg[1] * 256 / 32767, 10, 0, Math.PI * 2, true);
+                    //ctx.fill();
+                    //isCavasNeedUpdate = true;
+                }
+            },
+            tick: function () {
+                //ease movement
+                this.el.object3D.position.add(this.direction.multiplyScalar(0.5));
+            }
+        });
+
+        //raycaster component
+        AFRAME.registerComponent('wall-collider', {
+            schema: {
+                raycaster: { type: 'selector' },
+            },
+            multiple: true,
+            dependencies: ['raycaster'],
+            init: function () {
+                this.el.addEventListener('raycaster-intersection', (event) => {
+                    if (event.target !== this.data.raycaster) return;
+                    //console.log(event.target);
+                    console.log(event.detail);
+                    let face = event.detail.intersections[0].face.normal
+                    this.face = new THREE.Vector3(face.x, 0, face.z);
+                });
+                this.el.addEventListener('raycaster-intersection-cleard', (event) => {
+                    if (event.target !== this.data.raycaster) return;
+                    this.face = null;
+                });
+            },
+            tick: function () {
+                if (!this.face) return;
+                this.el.object3D.position.add(this.face.multiplyScalar(0.5));
+            }
+        });
+
+        /*
+        //canvas component
+        AFRAME.registerComponent('canvas-texture', {
+            schema: {
+                canvas: { type: 'selector' },
+            },
+            dependencies: ['geometry', 'material'],
+            init: function () {
+                this.canvas = document.getElementById('canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.ctx.fillStyle = 'black';
+                this.ctx.fillRect(0, 0, 512, 512);
+                this.ctx.strokeStyle = 'black';
+                this.ctx.strokeRect(0, 0, 511, 511);
+                this.ctx.strokeStyle = 'gray';
+                this.ctx.beginPath();
+                this.ctx.moveTo(0, 255);
+                this.ctx.lineTo(511, 255);
+                this.ctx.moveTo(255, 0);
+                this.ctx.lineTo(255, 511);
+                this.ctx.stroke();
+                this.ctx.arc(256, 256, 10, 0, Math.PI * 2, true);
+                backImageData = this.ctx.getImageData(0, 0, 512, 512);
+            },
+            tick: function () {
+                if (!isCavasNeedUpdate) return;
+                isCavasNeedUpdate = false;
+
+                let material = this.el.getObject3D('mesh').material;
+                if (!material.map) return;
+                material.map.needsUpdate = true;
+            }
+        })*/
+    </script>
+</head>
+
+<body>
+    <a-scene>
+        <a-assets>
+            <a-asset-item id="key-model" src="Key.gltf"></a-asset-item>
+            <canvas id="canvas" width="512" height="512"></canvas>
+        </a-assets>
+
+        <a-plane position="0 0 0" rotation="-90 0 0" width="80" height="80" color="gray"></a-plane>
+        <a-sky src="./back.jpg"></a-sky>
+        <a-entity light="type:directional;color:#fff;intensity:0.4" position="-1 1 0"></a-entity>
+        <a-entity id="maze" position="0 1.5 0">
+            <!-- maze box -->
+        </a-entity>
+
+        <a-entity position="0 2 0" rotation="0 -90 0" movement-controls="fly:false;speed:0.3;" look-controls
+            wasd-controls joycon-control wall-collider__f="raycaster:#raycaster-f"
+            wall-collider__b="raycaster:#raycaster-b" wall-collider__l="raycaster:#raycaster-l"
+            wall-collider__r="raycaster:#raycaster-r">
+            <a-entity id="raycaster-f" position="0 0.5 0"
+                raycaster="objects: .data-collidable; far:0.5; showLine:false; lineColor:red; direction:0 0 -1;">
+            </a-entity>
+            <a-entity id="raycaster-l" position="0 0.5 0"
+                raycaster="objects: .data-collidable; far:0.5; showLine:false; lineColor:red; direction:1 0 0;">
+            </a-entity>
+            <a-entity id="raycaster-r" position="0 0.5 0"
+                raycaster="objects: .data-collidable; far:0.5; showLine:false; lineColor:red; direction:-1 0 0;">
+            </a-entity>
+            <a-entity id="raycaster-b" position="0 0.5 0"
+                raycaster="objects: .data-collidable; far:0.5; showLine:false; lineColor:red; direction:0 0 1;">
+            </a-entity>
+            <a-entity camera position="0 0 0">
+                <!-- <a-entity position="-0.1 -0.1 -0.3" scale="0.2 0.2 0.2" rotation="-30 40 0" geometry="primitive:plane"
+                    material="src:#canvas" canvas-texture="canvas:canvas"></a-entity> -->
+            </a-entity>
+            <a-entity light="type: point; color:#fff; distance:10;" position="0 0 0"></a-entity>
+        </a-entity>
+    </a-scene>
+    <script>
+        function createMaze(mazedata, wallcolor, ceilingcolor) {
+            let mazeElement = document.getElementById('maze');
+            for (let i = 0; i < mazedata.length; i++) {
+                for (let j = 0; j < mazedata[0].length; j++) {
+                    if (mazedata[i][j] == '@') {
+                        let wallBlockElement = document.createElement('a-box');
+                        wallBlockElement.setAttribute('position', `${j * 3 - 3} 0 ${i * 3 - 3}`);
+                        wallBlockElement.setAttribute('scale', '3 3 3');
+                        wallBlockElement.setAttribute('color', wallcolor);
+                        wallBlockElement.classList.add('data-collidable');
+                        mazeElement.appendChild(wallBlockElement);
+                    }
+                    else if (mazedata[i][j] == 'K') {
+                        let keyElement = document.createElement('a-gltf-model');
+                        keyElement.setAttribute('src', '#key-model');
+                        keyElement.setAttribute('position', `${j * 3 - 3} -0.5 ${i * 3 - 3}`);
+                        keyElement.setAttribute('rotation', `45 -120 20`);
+                        keyElement.setAttribute('scale', '0.3 0.3 0.3');
+                        keyElement.setAttribute('color', '#fff');
+                        mazeElement.appendChild(keyElement);
+                    }
+                    let ceilingBlockElement = document.createElement('a-box');
+                    ceilingBlockElement.setAttribute('position', `${j * 3 - 3} 3 ${i * 3 - 3}`);
+                    ceilingBlockElement.setAttribute('scale', '3 3 3');
+                    ceilingBlockElement.setAttribute('color', ceilingcolor);
+                    ceilingBlockElement.classList.add('data-collidable');
+                    mazeElement.appendChild(ceilingBlockElement);
+                }
+            }
+        }
+
+        const mazedata = [['@', '@', '@', '@', '@', '@', '@', '@', '@', '@', '@', '@'],
+                          ['@', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', '@', ' ', '@'],
+                          ['@', '@', ' ', '@', ' ', '@', ' ', '@', ' ', '@', ' ', '@'],
+                          ['@', '@', '@', '@', ' ', ' ', ' ', '@', ' ', ' ', ' ', '@'],
+                          ['@', ' ', ' ', ' ', '@', '@', ' ', '@', '@', '@', ' ', '@'],
+                          ['@', ' ', '@', ' ', ' ', '@', ' ', ' ', ' ', ' ', ' ', '@'],
+                          ['@', ' ', '@', '@', 'K', ' ', ' ', '@', '@', '@', '@', '@'],
+                          ['@', ' ', ' ', ' ', '@', '@', ' ', '@', ' ', ' ', ' ', '@'],
+                          ['@', ' ', '@', ' ', '@', '@', '@', ' ', '@', '@', '@', '@'],
+                          ['@', ' ', '@', ' ', ' ', ' ', '@', '@', ' ', '@', ' ', '@'],
+                          ['@', ' ', ' ', ' ', '@', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+                          ['@', '@', '@', '@', '@', '@', '@', '@', '@', '@', '@', '@'],];
+
+        createMaze(mazedata, 'red', 'gray');
+        document.querySelector('a-scene').enterVR();
+    </script>
+</body>
+
+</html>
